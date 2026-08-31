@@ -21,6 +21,15 @@ npm run test     # 단위 테스트
 npm run lint     # 린트
 ```
 
+## 검증 방법
+- **단위/통합 테스트**: `npm run test` — 전투 공식, 던전 생성, 경로탐색, 좌표 변환, 상태이상 등 순수 로직 + 헤드리스 통합 시나리오(이동/전투/AI/사망).
+- **브라우저 스모크**: 실제 Chromium(Playwright)으로 게임 페이지를 띄워 콘솔/페이지 오류·canvas 렌더·입력(이동/스킬/층이동/재생성)을 검증.
+  ```bash
+  npm run build
+  npx vite preview --port 4173   # 별도 터미널에서 실행
+  npm run smoke                  # Playwright 스모크 (playwright 설치 필요)
+  ```
+
 ## Phase 1 (구현 완료)
 아이소메트릭 타일 그리드 렌더 + 카메라/줌 + 디버그 오버레이 + 픽셀 퍼펙트 파이프라인.
 

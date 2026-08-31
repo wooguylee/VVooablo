@@ -11,8 +11,8 @@ import { SkillBar } from '@/ui/SkillBar';
 import { BossHud } from '@/ui/BossHud';
 
 /**
- * Phase 3 부트스트랩.
- * 절차적 던전 생성 2종(방+복도 / 동굴) + 층 이동 + 시드 재현 + 충돌/컬링.
+ * Phase 6 부트스트랩.
+ * 던전 + 전투 + 스킬 5종 + 몬스터 4종 + 엘리트/보스까지 통합된 진입점.
  */
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
 
   loop.start();
   // eslint-disable-next-line no-console
-  console.log(`[VVooablo] Phase 3 시작. baseSeed=${seed}`);
+  console.log(`[VVooablo] Phase 6 시작. baseSeed=${seed}`);
 }
 
 main().catch((err) => {
