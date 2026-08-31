@@ -23,6 +23,14 @@ import { createProfile, addToInventory, type PlayerProfile } from '@/entities/pl
 import { equipItem, unequipItem, applyProfileStats } from '@/systems/items/equipSystem';
 import { rollDrops } from '@/systems/items/dropSystem';
 import { GroundItems } from '@/render/GroundItems';
+import { gainXp } from '@/systems/leveling';
+import { generateTown, type TownFeatures } from '@/world/Town';
+import { generateShopStock } from '@/systems/shopSystem';
+import { buyItem, sellItem, buyPotion } from '@/systems/shopSystem';
+import { spendStatPoint } from '@/systems/leveling';
+import { allocateTalent, resetTalents } from '@/systems/talentSystem';
+import { updatePotionCooldown, usePotion, type PotionState } from '@/systems/potionSystem';
+import type { ItemInstance } from '@/data/itemTypes';
 import { createTotem } from '@/entities/createTotem';
 import { createMonster } from '@/entities/createMonster';
 import { MONSTERS } from '@/data/monsters';
@@ -67,6 +75,10 @@ export class Game {
   player = 0;
   playerDead = false;
   boss = -1;
+  isTown = false;
+  townFeatures: TownFeatures | null = null;
+  shopStock: ItemInstance[] = [];
+  private potionState: PotionState = { cooldown: 0 };
   readonly profile: PlayerProfile = createProfile();
 
   private grid!: TileGridRenderer;
@@ -96,7 +108,21 @@ export class Game {
     this.rng = new Rng(baseSeed);
     this.debugGfx = new Graphics();
     this.skillInput = new SkillInput(camera, canvas);
-    this.loadFloor(1);
+    // 포션 입력 (1~4)
+    window.addEventListener('keydown', (e) => {
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        this.tryUsePotion();
+      }
+    });
+    this.loadFloor(0); // 마을에서 시작
+  }
+
+  private tryUsePotion(): void {
+    const healed = usePotion(this.world, this.player, this.profile, this.potionState);
+    if (healed > 0) {
+      const pos = this.world.store<Position>(C.Position).get(this.player);
+      if (pos) this.damageNumbers.spawn(pos.x, pos.y, healed, 'cold', false);
+    }
   }
 
   loadFloor(depth: number, spawnAt: 'entrance' | 'exit' = 'entrance'): void {
@@ -105,7 +131,15 @@ export class Game {
     this.playerDead = false;
 
     this.depth = depth;
-    this.floor = generateFloor(this.baseSeed, depth);
+    this.isTown = depth === 0;
+    if (this.isTown) {
+      const town = generateTown(this.baseSeed);
+      this.floor = { depth: 0, monsterLevel: 1, dungeon: town.dungeon };
+      this.townFeatures = town.features;
+    } else {
+      this.floor = generateFloor(this.baseSeed, depth);
+      this.townFeatures = null;
+    }
     this.map = this.floor.dungeon.map;
     // 층 RNG (전투/변동에 사용, 층별 결정성)
     this.rng = new Rng((this.floor.dungeon.seed ^ 0xc0dba7) >>> 0);
@@ -147,16 +181,25 @@ export class Game {
       profile: this.profile,
     });
 
-    // 몬스터 스폰 (깊이에 따라 증가)
-    const count = SPAWN_BASE + depth * 3;
-    const spawnResult = spawnMonsters(
-      this.world,
-      this.entityLayer,
-      this.floor.dungeon,
-      this.floor.monsterLevel,
-      count,
-    );
-    this.boss = spawnResult.boss ?? -1;
+    // 몬스터 스폰 (마을은 생략)
+    if (this.isTown) {
+      this.boss = -1;
+      // 상점 재고 생성 (방문 시 갱신)
+      this.shopStock = generateShopStock(
+        new Rng((this.baseSeed ^ 0x5407) >>> 0),
+        Math.max(1, this.profile.level),
+      );
+    } else {
+      const count = SPAWN_BASE + depth * 3;
+      const spawnResult = spawnMonsters(
+        this.world,
+        this.entityLayer,
+        this.floor.dungeon,
+        this.floor.monsterLevel,
+        count,
+      );
+      this.boss = spawnResult.boss ?? -1;
+    }
 
     const s = worldToScreen(spawn.x + 0.5, spawn.y + 0.5);
     this.camera.snapTo(s.x, s.y);
@@ -210,6 +253,7 @@ export class Game {
     animationTickSystem(this.world, dt);
     this.particles.update(dt);
     this.damageNumbers.update(dt);
+    updatePotionCooldown(this.potionState, dt);
     this.cleanupCorpses(dt);
 
     const pos = this.world.store<Position>(C.Position).get(this.player);
@@ -319,9 +363,24 @@ export class Game {
       this.camera.shake(8, 0.5);
     } else {
       this.camera.shake(3, 0.15);
+      this.grantXp(entity);
       this.rollLoot(entity);
       // 시체 표시 후 제거 예약
       this.world.store<Corpse>(CC.Corpse).set(entity, { timer: CORPSE_FADE });
+    }
+  }
+
+  /** 적 처치 경험치 획득 + 레벨업 시 스탯 재적용 */
+  private grantXp(entity: number): void {
+    const xp = this.world.store<number>(CC.XpReward).get(entity) ?? 0;
+    if (xp <= 0) return;
+    const result = gainXp(this.profile, xp);
+    if (result.leveledUp) {
+      applyProfileStats(this.world, this.player, this.profile);
+      // 레벨업 시 체력 완전 회복 + 연출
+      const h = this.world.store<Health>(CC.Health).get(this.player);
+      if (h) h.hp = h.maxHp;
+      this.camera.shake(2, 0.2);
     }
   }
 
@@ -381,9 +440,14 @@ export class Game {
     }
   }
 
-  /** 마을(1층)에서 부활 */
+  /** 마을에서 부활 */
   respawn(): void {
-    this.loadFloor(1, 'entrance');
+    this.loadFloor(0, 'entrance');
+  }
+
+  /** 마을로 귀환 (포탈) */
+  returnToTown(): void {
+    this.loadFloor(0, 'entrance');
   }
 
   render(alpha: number): void {
@@ -434,6 +498,57 @@ export class Game {
   }
   get equipment() {
     return this.profile.equipment;
+  }
+
+  /** 플레이어 타일 위치 (UI 상호작용 판정용) */
+  playerTile(): { x: number; y: number } | null {
+    const pos = this.world.store<Position>(C.Position).get(this.player);
+    return pos ? { x: pos.x, y: pos.y } : null;
+  }
+
+  /** 마을에서 상인/스탯리셋 근처인지 */
+  nearMerchant(): boolean {
+    return this.nearFeature(this.townFeatures?.merchant);
+  }
+  nearStatReset(): boolean {
+    return this.nearFeature(this.townFeatures?.statReset);
+  }
+  private nearFeature(f: { x: number; y: number } | undefined): boolean {
+    if (!this.isTown || !f) return false;
+    const p = this.playerTile();
+    if (!p) return false;
+    return Math.hypot(p.x - f.x, p.y - f.y) <= 2;
+  }
+
+  /** 장착 후 스탯 반영을 외부(특성/스탯 UI)에서 호출 */
+  refreshStats(): void {
+    applyProfileStats(this.world, this.player, this.profile);
+  }
+
+  /** 스탯 포인트 투자 */
+  spendStat(stat: 'str' | 'dex' | 'int' | 'vit'): void {
+    if (spendStatPoint(this.profile, stat)) this.refreshStats();
+  }
+  /** 특성 배분 */
+  allocTalent(id: string): void {
+    if (allocateTalent(this.profile, id)) this.refreshStats();
+  }
+  /** 특성 초기화 */
+  resetTalents(): void {
+    resetTalents(this.profile);
+    this.refreshStats();
+  }
+  /** 상점 구매 */
+  buy(item: ItemInstance): void {
+    if (buyItem(this.profile, item)) {
+      this.shopStock = this.shopStock.filter((i) => i.uid !== item.uid);
+    }
+  }
+  sell(uid: number): void {
+    sellItem(this.profile, uid);
+  }
+  buyPotion(): void {
+    buyPotion(this.profile);
   }
 
   /** 보스 정보 (HUD용). 없으면 null. */

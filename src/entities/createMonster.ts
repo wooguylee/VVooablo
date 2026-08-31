@@ -124,5 +124,9 @@ export function createMonster(
     });
   }
 
+  // 경험치 보상 (엘리트/보스 가중)
+  const xpMult = def.isBoss ? 1 : opts.elite ? 2.5 : 1;
+  world.store<number>(CC.XpReward).set(e, Math.round(def.xp * xpMult));
+
   return e;
 }

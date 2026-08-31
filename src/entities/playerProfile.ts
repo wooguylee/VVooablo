@@ -18,6 +18,10 @@ export interface PlayerProfile {
   /** 배분 가능한 스탯/스킬 포인트 (Phase 8) */
   statPoints: number;
   skillPoints: number;
+  /** 특성 노드별 배분 랭크 (id → rank) */
+  talents: Record<string, number>;
+  /** 보유 포션 수 (슬롯 1: 체력 포션) */
+  potions: number;
 }
 
 export function createProfile(): PlayerProfile {
@@ -30,6 +34,8 @@ export function createProfile(): PlayerProfile {
     inventory: { cols: 8, rows: 4, items: new Map(), gold: 0 },
     statPoints: 0,
     skillPoints: 0,
+    talents: {},
+    potions: 2,
   };
 }
 

@@ -7,6 +7,7 @@ import { CC, type Stats, type Health } from '@/entities/combatComponents';
 import type { PlayerProfile } from '@/entities/playerProfile';
 import type { EquipSlot } from '@/data/itemTypes';
 import { recalcStats } from '@/systems/items/equipment';
+import { talentTotals } from '@/systems/talentSystem';
 
 /** 아이템을 장착 (같은 슬롯 아이템은 인벤토리로 반환). ring은 빈 슬롯 우선. */
 export function equipItem(profile: PlayerProfile, uid: number): boolean {
@@ -53,6 +54,7 @@ export function applyProfileStats(world: World, entity: Entity, profile: PlayerP
     profile.equipment,
     profile.level,
     profile.baseWeaponDamage,
+    talentTotals(profile),
   );
   const ratio = health.maxHp > 0 ? health.hp / health.maxHp : 1;
   stats.core = recalc.core;

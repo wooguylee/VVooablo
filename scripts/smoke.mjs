@@ -85,6 +85,20 @@ const URL = process.env.GAME_URL || 'http://localhost:4173/?seed=smoke';
   await page.keyboard.press('i');
   await page.waitForTimeout(200);
 
+  // 캐릭터 패널 (C) — Phase 8 레벨/특성
+  await page.keyboard.press('c');
+  await page.waitForTimeout(300);
+  const charOpen = await page.evaluate(() =>
+    document.body.innerText.includes('특성 트리') || document.body.innerText.includes('캐릭터'),
+  );
+  console.log('캐릭터 패널 표시:', charOpen);
+  await page.keyboard.press('c');
+  await page.waitForTimeout(200);
+
+  // 포션 사용 (1)
+  await page.keyboard.press('1');
+  await page.waitForTimeout(300);
+
   // 픽셀 렌더 확인: canvas가 완전히 검지 않은지 (스크린샷 후 분석 대신 간단 체크)
   const rendered = await page.evaluate(() => {
     const c = document.querySelector('#game-root canvas');

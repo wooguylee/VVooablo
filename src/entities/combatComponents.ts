@@ -10,6 +10,7 @@ export const CC = {
   Attacker: 'Attacker',
   Enemy: 'Enemy',
   Corpse: 'Corpse',
+  XpReward: 'XpReward',
 } as const;
 
 export interface Health {

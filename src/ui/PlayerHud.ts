@@ -10,6 +10,7 @@ export class PlayerHud {
   private fill: HTMLDivElement;
   private label: HTMLSpanElement;
   private deathOverlay: HTMLDivElement;
+  private xpLine!: HTMLDivElement;
 
   constructor(mount: HTMLElement, cb: PlayerHudCallbacks) {
     // 체력바
@@ -49,6 +50,21 @@ export class PlayerHud {
     this.bar.appendChild(this.label);
     mount.appendChild(this.bar);
 
+    // 경험치/레벨 라인 (체력바 위)
+    this.xpLine = document.createElement('div');
+    Object.assign(this.xpLine.style, {
+      position: 'absolute',
+      left: '50%',
+      bottom: '58px',
+      transform: 'translateX(-50%)',
+      color: '#adf',
+      font: '10px monospace',
+      textShadow: '0 1px 1px #000',
+      zIndex: '100',
+      whiteSpace: 'nowrap',
+    } satisfies Partial<CSSStyleDeclaration>);
+    mount.appendChild(this.xpLine);
+
     // 사망 오버레이
     this.deathOverlay = document.createElement('div');
     Object.assign(this.deathOverlay.style, {
@@ -82,10 +98,13 @@ export class PlayerHud {
     mount.appendChild(this.deathOverlay);
   }
 
-  update(hp: number, maxHp: number, dead: boolean): void {
+  update(hp: number, maxHp: number, dead: boolean, info?: { level: number; xpRatio: number; potions: number }): void {
     const ratio = Math.max(0, hp / maxHp);
     this.fill.style.width = `${ratio * 100}%`;
     this.label.textContent = `HP ${Math.ceil(hp)} / ${maxHp}`;
     this.deathOverlay.style.display = dead ? 'flex' : 'none';
+    if (info) {
+      this.xpLine.textContent = `Lv ${info.level}  XP ${Math.round(info.xpRatio * 100)}%  포션 ${info.potions} (1~4)`;
+    }
   }
 }

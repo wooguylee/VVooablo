@@ -24,6 +24,7 @@ import { SC, createSkillUser } from '@/entities/skillComponents';
 import { DEFAULT_SKILL_SLOTS } from '@/data/skills';
 import { IC } from '@/systems/items/equipment';
 import { recalcStats } from '@/systems/items/equipment';
+import { talentTotals } from '@/systems/talentSystem';
 import type { PlayerProfile } from '@/entities/playerProfile';
 
 export interface PlayerConfig {
@@ -70,7 +71,13 @@ export function createPlayer(world: World, layer: Container, cfg: PlayerConfig):
   const baseWeaponDamage = profile?.baseWeaponDamage ?? 12;
   const equipment = profile?.equipment ?? { slots: {} };
 
-  const recalc = recalcStats(baseCore, equipment, level, baseWeaponDamage);
+  const recalc = recalcStats(
+    baseCore,
+    equipment,
+    level,
+    baseWeaponDamage,
+    profile ? talentTotals(profile) : undefined,
+  );
   world.store<Stats>(CC.Stats).set(entity, {
     core: recalc.core,
     derived: recalc.derived,

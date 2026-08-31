@@ -91,14 +91,26 @@ export interface RecalcResult {
 /**
  * 최종 스탯 재계산.
  * baseCore(레벨업/특성으로 얻은 코어) + 장비 스탯 → 파생 스탯.
+ * extraTotals: 특성 등 추가 modifier 합산분(선택).
  */
 export function recalcStats(
   baseCore: CoreStats,
   equip: Equipment,
   level: number,
   baseWeaponDamage: number,
+  extraTotals?: ModTotals,
 ): RecalcResult {
-  const { totals, weaponBase, baseArmor } = sumEquipment(equip);
+  const eq = sumEquipment(equip);
+  const totals = eq.totals;
+  const weaponBase = eq.weaponBase;
+  const baseArmor = eq.baseArmor;
+
+  // 특성 등 추가 modifier 합산
+  if (extraTotals) {
+    for (const k of Object.keys(totals) as (keyof ModTotals)[]) {
+      totals[k] += extraTotals[k];
+    }
+  }
 
   const core: CoreStats = {
     str: baseCore.str + totals.str,

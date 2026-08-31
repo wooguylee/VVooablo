@@ -10,10 +10,13 @@ import { PlayerHud } from '@/ui/PlayerHud';
 import { SkillBar } from '@/ui/SkillBar';
 import { BossHud } from '@/ui/BossHud';
 import { InventoryPanel } from '@/ui/InventoryPanel';
+import { CharacterPanel } from '@/ui/CharacterPanel';
+import { ShopPanel } from '@/ui/ShopPanel';
+import { xpProgress } from '@/systems/leveling';
 
 /**
- * Phase 7 부트스트랩.
- * 아이템/드롭/인벤토리/장비/스탯 재계산까지 통합된 진입점.
+ * Phase 8 부트스트랩.
+ * 레벨링/특성 트리 + 마을 허브 + 상점 + 포션까지 통합된 진입점.
  */
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
@@ -47,6 +50,16 @@ async function main(): Promise<void> {
     onEquip: (uid) => game.equip(uid),
     onUnequip: (slot) => game.unequip(slot),
   });
+  const characterPanel = new CharacterPanel(mount, {
+    onSpendStat: (stat) => game.spendStat(stat),
+    onAllocTalent: (id) => game.allocTalent(id),
+    onResetTalents: () => game.resetTalents(),
+  });
+  const shopPanel = new ShopPanel(mount, {
+    onBuy: (item) => game.buy(item),
+    onSell: (uid) => game.sell(uid),
+    onBuyPotion: () => game.buyPotion(),
+  });
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -71,10 +84,18 @@ async function main(): Promise<void> {
         });
         hud.update(game.depth, game.floor.dungeon.seed, game.floor.dungeon.kind, game.floor.monsterLevel);
         const ph = game.playerHealth();
-        if (ph) playerHud.update(ph.hp, ph.maxHp, game.playerDead);
+        if (ph)
+          playerHud.update(ph.hp, ph.maxHp, game.playerDead, {
+            level: game.profile.level,
+            xpRatio: xpProgress(game.profile),
+            potions: game.profile.potions,
+          });
         skillBar.update(game.playerSkills());
         bossHud.update(game.bossInfo());
         inventoryPanel.update(game.inventory, game.equipment);
+        characterPanel.update(game.profile);
+        shopPanel.setVisible(game.nearMerchant());
+        shopPanel.update(game.profile, game.shopStock);
       },
     },
     Config.fixedHz,
@@ -82,7 +103,7 @@ async function main(): Promise<void> {
 
   loop.start();
   // eslint-disable-next-line no-console
-  console.log(`[VVooablo] Phase 7 시작. baseSeed=${seed}`);
+  console.log(`[VVooablo] Phase 8 시작. baseSeed=${seed}`);
 }
 
 main().catch((err) => {
