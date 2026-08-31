@@ -11,6 +11,7 @@ import { CC, type Stats, type Health, type Faction } from '@/entities/combatComp
 import { SC, type SkillUser } from '@/entities/skillComponents';
 import { SKILLS, type SkillDef } from '@/data/skills';
 import { computeDamage, type DamageResult } from '@/systems/combat/damage';
+import { applyDamageToEntity } from '@/systems/combat/applyDamage';
 import { inArc, inCircle, worldDirToAngle } from '@/systems/combat/hitbox';
 import { applyStatus, hasStatus, vulnerabilityMultiplier } from '@/systems/status/statusSystem';
 import type { ProjectileSystem } from '@/systems/ProjectileSystem';
@@ -170,7 +171,7 @@ function damageTargets(
     );
     const vuln = vulnerabilityMultiplier(world, entity);
     result.amount = Math.max(1, Math.round(result.amount * vuln));
-    h.hp -= result.amount;
+    applyDamageToEntity(world, entity, result.amount);
     ctx.onHit(pos.x, pos.y, result);
     if (def.applyStatus) {
       applyStatus(world, entity, def.applyStatus.type, def.applyStatus.duration, def.applyStatus.magnitude);

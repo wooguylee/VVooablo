@@ -17,6 +17,8 @@ import {
   type Attacker,
 } from '@/entities/combatComponents';
 import { computeDamage, type DamageResult } from '@/systems/combat/damage';
+import { applyDamageToEntity } from '@/systems/combat/applyDamage';
+import { vulnerabilityMultiplier } from '@/systems/status/statusSystem';
 
 export interface CombatCallbacks {
   onDamage: (targetEntity: Entity, x: number, y: number, result: DamageResult) => void;
@@ -89,7 +91,9 @@ export function combatSystem(
     );
 
     if (tHealth.invuln <= 0) {
-      tHealth.hp -= result.amount;
+      const vuln = vulnerabilityMultiplier(world, target);
+      result.amount = Math.max(1, Math.round(result.amount * vuln));
+      applyDamageToEntity(world, target, result.amount);
       tHealth.invuln = 0.05;
       cb.onDamage(target, tPos.x, tPos.y, result);
 

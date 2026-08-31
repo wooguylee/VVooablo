@@ -20,15 +20,22 @@ import { SpatialHash } from '@/world/SpatialHash';
 import type { TileMap } from '@/world/TileMap';
 import { createPlayer } from '@/entities/createPlayer';
 import { createTotem } from '@/entities/createTotem';
+import { createMonster } from '@/entities/createMonster';
+import { MONSTERS } from '@/data/monsters';
 import { C, type Position, type Movement } from '@/entities/components';
-import { CC, type Health, type Corpse, type Faction } from '@/entities/combatComponents';
+import { CC, type Health, type Corpse, type Faction, type Stats } from '@/entities/combatComponents';
+import { AC, type Boss } from '@/entities/aiComponents';
 import { SC, type SkillUser } from '@/entities/skillComponents';
 import { InputController } from '@/systems/InputController';
 import { SkillInput } from '@/systems/SkillInput';
 import { movementSystem } from '@/systems/movementSystem';
 import { animationTickSystem, renderSyncSystem } from '@/systems/renderSyncSystem';
-import { aiSystem } from '@/systems/aiSystem';
+import { aiSystem, type AiContext } from '@/systems/aiSystem';
 import { combatSystem } from '@/systems/combatSystem';
+import { applyDamageToEntity } from '@/systems/combat/applyDamage';
+import { inCircle } from '@/systems/combat/hitbox';
+import { vulnerabilityMultiplier } from '@/systems/status/statusSystem';
+import { computeDamage } from '@/systems/combat/damage';
 import {
   rebuildSpatialHash,
   playerTargetingSystem,
@@ -55,10 +62,12 @@ export class Game {
   map!: TileMap;
   player = 0;
   playerDead = false;
+  boss = -1;
 
   private grid!: TileGridRenderer;
   private markers!: FeatureMarkers;
   private entityLayer!: Container;
+  private telegraphGfx!: Graphics;
   private damageNumbers!: DamageNumbers;
   private healthBars!: HealthBars;
   private particles!: ParticleSystem;
@@ -107,6 +116,8 @@ export class Game {
     this.damageNumbers = new DamageNumbers(this.worldContainer);
     this.particles = new ParticleSystem(this.worldContainer);
     this.projectiles = new ProjectileSystem(this.worldContainer);
+    this.telegraphGfx = new Graphics();
+    this.worldContainer.addChild(this.telegraphGfx);
     this.worldContainer.addChild(this.debugGfx);
 
     this.skillCtx = {
@@ -127,7 +138,14 @@ export class Game {
 
     // 몬스터 스폰 (깊이에 따라 증가)
     const count = SPAWN_BASE + depth * 3;
-    spawnMonsters(this.world, this.entityLayer, this.floor.dungeon, this.floor.monsterLevel, count);
+    const spawnResult = spawnMonsters(
+      this.world,
+      this.entityLayer,
+      this.floor.dungeon,
+      this.floor.monsterLevel,
+      count,
+    );
+    this.boss = spawnResult.boss ?? -1;
 
     const s = worldToScreen(spawn.x + 0.5, spawn.y + 0.5);
     this.camera.snapTo(s.x, s.y);
@@ -151,11 +169,12 @@ export class Game {
 
   update(dt: number): void {
     this.input.update();
+    this.telegraphGfx.clear();
     movementSystem(this.world, dt);
 
     // AI → 타겟팅 → 전투
     rebuildSpatialHash(this.world, this.hash);
-    aiSystem(this.world, dt, this.map, this.player);
+    aiSystem(this.buildAiContext(), dt);
     playerTargetingSystem(this.world, this.hash, this.player);
     allyTargetingSystem(this.world, this.hash, this.player);
     combatSystem(this.world, dt, this.rng, {
@@ -199,6 +218,76 @@ export class Game {
       const skillId = su.slots[req.slot];
       if (skillId) castSkill(this.skillCtx, this.player, skillId, req.targetX, req.targetY);
     }
+  }
+
+  private buildAiContext(): AiContext {
+    return {
+      world: this.world,
+      map: this.map,
+      player: this.player,
+      rng: this.rng,
+      projectiles: this.projectiles,
+      requestSummon: (x, y, id, lvl) => {
+        const def = MONSTERS[id];
+        if (def) createMonster(this.world, this.entityLayer, def, x, y, lvl, {});
+      },
+      onTelegraph: (x, y, radius, type) => this.drawTelegraph(x, y, radius, type),
+      dealAoe: (x, y, radius, coeff, level, weaponBase) =>
+        this.dealAoe(x, y, radius, coeff, level, weaponBase),
+      onHit: (x, y, amount, type) => this.damageNumbers.spawn(x, y, amount, type, false),
+      onKill: (e) => this.onDeath(e, e === this.player ? 'player' : 'enemy'),
+    };
+  }
+
+  /** 보스 광역 패턴 피해 (플레이어 대상) */
+  private dealAoe(
+    x: number,
+    y: number,
+    radius: number,
+    coeff: number,
+    level: number,
+    weaponBase: number,
+  ): void {
+    if (radius <= 0 || coeff <= 0) return;
+    const pos = this.world.store<Position>(C.Position).get(this.player);
+    const ph = this.world.store<Health>(CC.Health).get(this.player);
+    const pStats = this.world.store<Stats>(CC.Stats).get(this.player);
+    if (!pos || !ph || ph.dead) return;
+    if (!inCircle(pos.x, pos.y, x, y, radius)) return;
+    const result = computeDamage(
+      {
+        weaponBase,
+        skillCoeff: coeff,
+        increasedDamage: 0,
+        critChance: 0,
+        critDamage: 1.5,
+        attackerLevel: level,
+        type: 'fire',
+      },
+      { armor: pStats?.derived.armor ?? 0, resistance: pStats?.derived.resistance ?? 0 },
+      this.rng,
+    );
+    const vuln = vulnerabilityMultiplier(this.world, this.player);
+    result.amount = Math.max(1, Math.round(result.amount * vuln));
+    applyDamageToEntity(this.world, this.player, result.amount);
+    this.damageNumbers.spawn(pos.x, pos.y, result.amount, 'fire', false);
+    this.camera.shake(5, 0.25);
+    if (ph.hp <= 0 && !ph.dead) {
+      ph.hp = 0;
+      ph.dead = true;
+      this.onDeath(this.player, 'player');
+    }
+  }
+
+  private drawTelegraph(x: number, y: number, radius: number, type: string): void {
+    const g = this.telegraphGfx;
+    const s = worldToScreen(x + 0.5, y + 0.5);
+    const color = type === 'nova' ? 0xff3333 : 0xffaa33;
+    // 아이소 타원 근사 (반경을 화면 비율로)
+    g.ellipse(s.x, s.y, radius * 16, radius * 8);
+    g.stroke({ color, width: 2, alpha: 0.8 });
+    g.ellipse(s.x, s.y, radius * 16, radius * 8);
+    g.fill({ color, alpha: 0.15 });
   }
 
   private onDeath(entity: number, faction: 'player' | 'enemy'): void {
@@ -281,6 +370,15 @@ export class Game {
 
   playerSkills(): SkillUser | undefined {
     return this.world.store<SkillUser>(SC.SkillUser).get(this.player);
+  }
+
+  /** 보스 정보 (HUD용). 없으면 null. */
+  bossInfo(): { hp: number; maxHp: number; phase: number } | null {
+    if (this.boss < 0 || !this.world.isAlive(this.boss)) return null;
+    const h = this.world.store<Health>(CC.Health).get(this.boss);
+    const b = this.world.store<Boss>(AC.Boss).get(this.boss);
+    if (!h || h.dead || !b) return null;
+    return { hp: h.hp, maxHp: h.maxHp, phase: b.phase };
   }
 
   get visibleChunks(): number {

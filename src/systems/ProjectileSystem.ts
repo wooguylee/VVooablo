@@ -12,6 +12,7 @@ import { C, type Position } from '@/entities/components';
 import { CC, type Health, type Stats, type Faction } from '@/entities/combatComponents';
 import type { Projectile } from '@/entities/projectileComponents';
 import { computeDamage, type DamageResult } from '@/systems/combat/damage';
+import { applyDamageToEntity } from '@/systems/combat/applyDamage';
 import { applyStatus, vulnerabilityMultiplier } from '@/systems/status/statusSystem';
 
 export interface ProjectileHitCallbacks {
@@ -102,7 +103,7 @@ export class ProjectileSystem {
         );
         const vuln = vulnerabilityMultiplier(world, entity);
         result.amount = Math.max(1, Math.round(result.amount * vuln));
-        h.hp -= result.amount;
+        applyDamageToEntity(world, entity, result.amount);
         cb.onHit(pos.x, pos.y, result);
         if (p.applyStatus) {
           applyStatus(world, entity, p.applyStatus.type, p.applyStatus.duration, p.applyStatus.magnitude);

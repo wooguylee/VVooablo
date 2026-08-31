@@ -8,6 +8,7 @@ import { DebugOverlay } from '@/ui/DebugOverlay';
 import { FloorHud } from '@/ui/FloorHud';
 import { PlayerHud } from '@/ui/PlayerHud';
 import { SkillBar } from '@/ui/SkillBar';
+import { BossHud } from '@/ui/BossHud';
 
 /**
  * Phase 3 부트스트랩.
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
     onRespawn: () => game.respawn(),
   });
   const skillBar = new SkillBar(mount);
+  const bossHud = new BossHud(mount);
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
         const ph = game.playerHealth();
         if (ph) playerHud.update(ph.hp, ph.maxHp, game.playerDead);
         skillBar.update(game.playerSkills());
+        bossHud.update(game.bossInfo());
       },
     },
     Config.fixedHz,

@@ -1,21 +1,54 @@
 /**
- * AI 컴포넌트 (유한 상태 기계).
- * Phase 4: Idle → Chase → Attack. Phase 6에서 Patrol/Reposition/원거리/보스 확장.
+ * AI 컴포넌트 (유한 상태 기계) 및 확장 행동 상태.
+ * Idle → Patrol → Chase → Attack → Reposition → Death.
  */
+import type { MonsterKind } from '@/data/monsters';
+import type { EliteAffixId } from '@/data/eliteAffixes';
+
 export type AiState = 'idle' | 'patrol' | 'chase' | 'attack' | 'reposition' | 'death';
 
 export const AC = {
   Ai: 'Ai',
+  Elite: 'Elite',
+  Boss: 'Boss',
+  Shield: 'Shield',
 } as const;
 
 export interface Ai {
   state: AiState;
-  /** 감지 반경(타일) */
+  kind: MonsterKind;
   aggroRange: number;
-  /** 공격 사거리(타일) */
   attackRange: number;
-  /** 경로 재계산 타이머 */
   repathTimer: number;
-  /** 추적 대상 (플레이어 등) */
   target: number;
+  // 원거리/소환용 발사 위치 유지: 사거리보다 가까우면 후퇴(reposition)
+  preferredRange: number;
+  // 돌진
+  chargeCd: number;
+  charging: boolean;
+  chargeTargetX: number;
+  chargeTargetY: number;
+  chargeTimer: number;
+  // 소환
+  summonCd: number;
+  summonCount: number;
+  // 원거리 공격 쿨다운
+  rangedCd: number;
+}
+
+export interface Elite {
+  affixes: EliteAffixId[];
+}
+
+export interface Boss {
+  phase: number; // 1 또는 2
+  /** 패턴 텔레그래프 타이머 */
+  telegraphTimer: number;
+  telegraphType: 'none' | 'slam' | 'nova' | 'charge';
+  patternCd: number;
+}
+
+export interface Shield {
+  amount: number;
+  max: number;
 }
