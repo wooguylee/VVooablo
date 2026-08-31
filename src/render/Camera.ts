@@ -62,6 +62,10 @@ export class Camera {
     );
   }
 
+  setZoomIndex(i: number): void {
+    this.zoomIndex = Math.min(Config.zoomLevels.length - 1, Math.max(0, i));
+  }
+
   shake(magnitude: number, duration: number): void {
     // 기존 흔들림보다 강할 때만 갱신
     if (magnitude >= this.shakeMagnitude) {

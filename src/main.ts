@@ -12,11 +12,15 @@ import { BossHud } from '@/ui/BossHud';
 import { InventoryPanel } from '@/ui/InventoryPanel';
 import { CharacterPanel } from '@/ui/CharacterPanel';
 import { ShopPanel } from '@/ui/ShopPanel';
+import { OptionsPanel } from '@/ui/OptionsPanel';
 import { xpProgress } from '@/systems/leveling';
+import { loadOptions, saveOptions } from '@/save/options';
+import { SoundSystem } from '@/audio/SoundSystem';
+import { saveGame, loadGame } from '@/save/storage';
 
 /**
- * Phase 8 부트스트랩.
- * 레벨링/특성 트리 + 마을 허브 + 상점 + 포션까지 통합된 진입점.
+ * Phase 9 부트스트랩.
+ * 저장/로드(IndexedDB) + 옵션 + 사운드까지 통합된 진입점.
  */
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
@@ -35,6 +39,33 @@ async function main(): Promise<void> {
   const canvas = pixi.app.canvas as HTMLCanvasElement;
 
   const game = new Game(pixi.world, camera, canvas, seed);
+
+  // 옵션 + 사운드
+  const options = loadOptions();
+  camera.setZoomIndex(options.defaultZoomIndex);
+  const sound = new SoundSystem(options);
+  game.sound = sound;
+  // 자동 저장 연결
+  game.onAutosave = (data) => void saveGame(data);
+
+  // 첫 사용자 상호작용 시 오디오 컨텍스트 초기화 (브라우저 정책)
+  const initAudio = () => {
+    sound.init();
+    sound.resume();
+    window.removeEventListener('pointerdown', initAudio);
+    window.removeEventListener('keydown', initAudio);
+  };
+  window.addEventListener('pointerdown', initAudio);
+  window.addEventListener('keydown', initAudio);
+
+  // 저장 슬롯 0 자동 로드
+  try {
+    const existing = await loadGame(0);
+    if (existing) game.applySave(existing);
+  } catch {
+    // 무시 (첫 실행 등)
+  }
+
   const overlay = new DebugOverlay(mount);
   const hud = new FloorHud(mount, {
     onReseed: (s) => game.reseed(s),
@@ -60,6 +91,18 @@ async function main(): Promise<void> {
     onSell: (uid) => game.sell(uid),
     onBuyPotion: () => game.buyPotion(),
   });
+  const optionsPanel = new OptionsPanel(mount, options, {
+    onChange: (opts) => {
+      saveOptions(opts);
+      sound.setOptions(opts);
+    },
+    onSave: () => void saveGame(game.buildSaveData(0)),
+    onLoad: () =>
+      void loadGame(0).then((data) => {
+        if (data) game.applySave(data);
+      }),
+  });
+  void optionsPanel; // ESC로 자체 토글, 프레임 갱신 불필요
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -103,7 +146,7 @@ async function main(): Promise<void> {
 
   loop.start();
   // eslint-disable-next-line no-console
-  console.log(`[VVooablo] Phase 8 시작. baseSeed=${seed}`);
+  console.log(`[VVooablo] Phase 9 시작. baseSeed=${seed}`);
 }
 
 main().catch((err) => {

@@ -31,6 +31,9 @@ import { spendStatPoint } from '@/systems/leveling';
 import { allocateTalent, resetTalents } from '@/systems/talentSystem';
 import { updatePotionCooldown, usePotion, type PotionState } from '@/systems/potionSystem';
 import type { ItemInstance } from '@/data/itemTypes';
+import { buildSave, deserializeProfile, type SaveData } from '@/save/serialize';
+import { nextUid, setNextUid } from '@/systems/items/generateItem';
+import type { SoundSystem } from '@/audio/SoundSystem';
 import { createTotem } from '@/entities/createTotem';
 import { createMonster } from '@/entities/createMonster';
 import { MONSTERS } from '@/data/monsters';
@@ -79,7 +82,12 @@ export class Game {
   townFeatures: TownFeatures | null = null;
   shopStock: ItemInstance[] = [];
   private potionState: PotionState = { cooldown: 0 };
-  readonly profile: PlayerProfile = createProfile();
+  profile: PlayerProfile = createProfile();
+  sound: SoundSystem | null = null;
+  /** 자동 저장 슬롯 (기본 0) */
+  saveSlot = 0;
+  private autosaveTimer = 0;
+  onAutosave: ((data: SaveData) => void) | null = null;
 
   private grid!: TileGridRenderer;
   private markers!: FeatureMarkers;
@@ -122,7 +130,14 @@ export class Game {
     if (healed > 0) {
       const pos = this.world.store<Position>(C.Position).get(this.player);
       if (pos) this.damageNumbers.spawn(pos.x, pos.y, healed, 'cold', false);
+      this.sound?.play('potion');
     }
+  }
+
+  /** 피격 연출 + 사운드 */
+  private hitFx(x: number, y: number, amount: number, type: import('@/systems/combat/damage').DamageType, isCrit: boolean): void {
+    this.damageNumbers.spawn(x, y, amount, type, isCrit);
+    this.sound?.play(isCrit ? 'crit' : 'hit');
   }
 
   loadFloor(depth: number, spawnAt: 'entrance' | 'exit' = 'entrance'): void {
@@ -166,7 +181,7 @@ export class Game {
       rng: this.rng,
       projectiles: this.projectiles,
       particles: this.particles,
-      onHit: (x, y, r) => this.damageNumbers.spawn(x, y, r.amount, r.type, r.isCrit),
+      onHit: (x, y, r) => this.hitFx(x, y, r.amount, r.type, r.isCrit),
       onKill: (e) => this.onDeath(e, 'enemy'),
       onSummon: (x, y, def, lvl) => {
         createTotem(this.world, this.entityLayer, def, x, y, lvl);
@@ -232,7 +247,7 @@ export class Game {
     playerTargetingSystem(this.world, this.hash, this.player);
     allyTargetingSystem(this.world, this.hash, this.player);
     combatSystem(this.world, dt, this.rng, {
-      onDamage: (_e, x, y, r) => this.damageNumbers.spawn(x, y, r.amount, r.type, r.isCrit),
+      onDamage: (_e, x, y, r) => this.hitFx(x, y, r.amount, r.type, r.isCrit),
       onDeath: (e, fac) => this.onDeath(e, fac),
     });
 
@@ -246,7 +261,7 @@ export class Game {
       },
     });
     this.projectiles.update(this.world, dt, this.rng, {
-      onHit: (x, y, r) => this.damageNumbers.spawn(x, y, r.amount, r.type, r.isCrit),
+      onHit: (x, y, r) => this.hitFx(x, y, r.amount, r.type, r.isCrit),
       onKill: (e) => this.onDeath(e, 'enemy'),
     });
 
@@ -255,6 +270,15 @@ export class Game {
     this.damageNumbers.update(dt);
     updatePotionCooldown(this.potionState, dt);
     this.cleanupCorpses(dt);
+
+    // 자동 저장 (10초마다)
+    this.autosaveTimer += dt;
+    if (this.autosaveTimer >= 10) {
+      this.autosaveTimer = 0;
+      if (this.onAutosave && !this.playerDead) {
+        this.onAutosave(this.buildSaveData());
+      }
+    }
 
     const pos = this.world.store<Position>(C.Position).get(this.player);
     if (pos) {
@@ -275,6 +299,7 @@ export class Game {
     for (const item of result.items) {
       addToInventory(this.profile.inventory, item);
     }
+    if (result.gold > 0 || result.items.length > 0) this.sound?.play('pickup');
   }
 
   private processSkillInput(): void {
@@ -283,7 +308,9 @@ export class Game {
     if (!su) return;
     for (const req of this.skillInput.drain()) {
       const skillId = su.slots[req.slot];
-      if (skillId) castSkill(this.skillCtx, this.player, skillId, req.targetX, req.targetY);
+      if (skillId && castSkill(this.skillCtx, this.player, skillId, req.targetX, req.targetY)) {
+        this.sound?.play('skill');
+      }
     }
   }
 
@@ -361,8 +388,10 @@ export class Game {
     if (faction === 'player') {
       this.playerDead = true;
       this.camera.shake(8, 0.5);
+      this.sound?.play('death');
     } else {
       this.camera.shake(3, 0.15);
+      this.sound?.play('death');
       this.grantXp(entity);
       this.rollLoot(entity);
       // 시체 표시 후 제거 예약
@@ -381,6 +410,7 @@ export class Game {
       const h = this.world.store<Health>(CC.Health).get(this.player);
       if (h) h.hp = h.maxHp;
       this.camera.shake(2, 0.2);
+      this.sound?.play('levelup');
     }
   }
 
@@ -448,6 +478,20 @@ export class Game {
   /** 마을로 귀환 (포탈) */
   returnToTown(): void {
     this.loadFloor(0, 'entrance');
+  }
+
+  /** 현재 상태를 SaveData로 직렬화 */
+  buildSaveData(slot = this.saveSlot): SaveData {
+    return buildSave(slot, this.baseSeed, this.depth, this.profile, nextUid());
+  }
+
+  /** SaveData 적용 (로드) */
+  applySave(data: SaveData): void {
+    this.baseSeed = data.baseSeed;
+    this.profile = deserializeProfile(data.profile);
+    setNextUid(data.nextUid);
+    this.saveSlot = data.slot;
+    this.loadFloor(data.depth === 0 ? 0 : data.depth, 'entrance');
   }
 
   render(alpha: number): void {

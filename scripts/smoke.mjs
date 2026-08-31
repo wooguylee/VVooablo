@@ -99,6 +99,14 @@ const URL = process.env.GAME_URL || 'http://localhost:4173/?seed=smoke';
   await page.keyboard.press('1');
   await page.waitForTimeout(300);
 
+  // 옵션 패널 (ESC) — Phase 9
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  const optOpen = await page.evaluate(() => document.body.innerText.includes('옵션'));
+  console.log('옵션 패널 표시:', optOpen);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+
   // 픽셀 렌더 확인: canvas가 완전히 검지 않은지 (스크린샷 후 분석 대신 간단 체크)
   const rendered = await page.evaluate(() => {
     const c = document.querySelector('#game-root canvas');
