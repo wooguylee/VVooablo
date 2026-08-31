@@ -7,6 +7,7 @@ import { Camera } from '@/render/Camera';
 import { DebugOverlay } from '@/ui/DebugOverlay';
 import { FloorHud } from '@/ui/FloorHud';
 import { PlayerHud } from '@/ui/PlayerHud';
+import { SkillBar } from '@/ui/SkillBar';
 
 /**
  * Phase 3 부트스트랩.
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
   const playerHud = new PlayerHud(mount, {
     onRespawn: () => game.respawn(),
   });
+  const skillBar = new SkillBar(mount);
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -63,6 +65,7 @@ async function main(): Promise<void> {
         hud.update(game.depth, game.floor.dungeon.seed, game.floor.dungeon.kind, game.floor.monsterLevel);
         const ph = game.playerHealth();
         if (ph) playerHud.update(ph.hp, ph.maxHp, game.playerDead);
+        skillBar.update(game.playerSkills());
       },
     },
     Config.fixedHz,

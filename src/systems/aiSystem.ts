@@ -13,6 +13,7 @@ import { CC, type Health, type Attacker } from '@/entities/combatComponents';
 import { AC, type Ai } from '@/entities/aiComponents';
 import { findPath, smoothPath } from '@/world/pathfinding';
 import type { TileMap } from '@/world/TileMap';
+import { hasStatus } from '@/systems/status/statusSystem';
 
 const REPATH_INTERVAL = 0.4;
 
@@ -42,6 +43,13 @@ export function aiSystem(world: World, dt: number, map: TileMap, playerEntity: n
     }
 
     if (ai.repathTimer > 0) ai.repathTimer -= dt;
+
+    // 기절 시 행동 정지
+    if (hasStatus(world, entity, 'stun')) {
+      mv.path.length = 0;
+      if (atk) atk.target = -1;
+      continue;
+    }
 
     if (!playerAlive || !playerPos) {
       ai.state = 'idle';

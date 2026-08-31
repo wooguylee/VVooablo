@@ -21,6 +21,8 @@ import {
   type Attacker,
 } from '@/entities/combatComponents';
 import { baseStats, computeDerived } from '@/systems/combat/stats';
+import { SC, createSkillUser } from '@/entities/skillComponents';
+import { DEFAULT_SKILL_SLOTS } from '@/data/skills';
 
 export interface PlayerConfig {
   x: number;
@@ -75,6 +77,8 @@ export function createPlayer(world: World, layer: Container, cfg: PlayerConfig):
     skillCoeff: 0,
     target: -1,
   });
+
+  world.store(SC.SkillUser).set(entity, createSkillUser([...DEFAULT_SKILL_SLOTS]));
 
   return entity;
 }

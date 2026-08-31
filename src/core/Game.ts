@@ -12,20 +12,31 @@ import { TileGridRenderer } from '@/render/TileGridRenderer';
 import { FeatureMarkers } from '@/render/FeatureMarkers';
 import { DamageNumbers } from '@/render/DamageNumbers';
 import { HealthBars } from '@/render/HealthBars';
+import { ParticleSystem } from '@/render/ParticleSystem';
 import { worldToScreen } from '@/render/iso';
 import { generateFloor, type FloorInfo } from '@/world/DungeonManager';
 import { spawnMonsters } from '@/world/SpawnManager';
 import { SpatialHash } from '@/world/SpatialHash';
 import type { TileMap } from '@/world/TileMap';
 import { createPlayer } from '@/entities/createPlayer';
+import { createTotem } from '@/entities/createTotem';
 import { C, type Position, type Movement } from '@/entities/components';
 import { CC, type Health, type Corpse, type Faction } from '@/entities/combatComponents';
+import { SC, type SkillUser } from '@/entities/skillComponents';
 import { InputController } from '@/systems/InputController';
+import { SkillInput } from '@/systems/SkillInput';
 import { movementSystem } from '@/systems/movementSystem';
 import { animationTickSystem, renderSyncSystem } from '@/systems/renderSyncSystem';
 import { aiSystem } from '@/systems/aiSystem';
 import { combatSystem } from '@/systems/combatSystem';
-import { rebuildSpatialHash, playerTargetingSystem } from '@/systems/targetingSystem';
+import {
+  rebuildSpatialHash,
+  playerTargetingSystem,
+  allyTargetingSystem,
+} from '@/systems/targetingSystem';
+import { ProjectileSystem } from '@/systems/ProjectileSystem';
+import { statusSystem } from '@/systems/status/statusSystem';
+import { castSkill, skillSystem, type SkillContext } from '@/systems/skillSystem';
 
 const CORPSE_FADE = 1.2;
 const SPAWN_BASE = 10;
@@ -50,6 +61,10 @@ export class Game {
   private entityLayer!: Container;
   private damageNumbers!: DamageNumbers;
   private healthBars!: HealthBars;
+  private particles!: ParticleSystem;
+  private projectiles!: ProjectileSystem;
+  private skillCtx!: SkillContext;
+  private skillInput: SkillInput;
   private input!: InputController;
   private debugGfx: Graphics;
 
@@ -65,6 +80,7 @@ export class Game {
     this.baseSeed = baseSeed;
     this.rng = new Rng(baseSeed);
     this.debugGfx = new Graphics();
+    this.skillInput = new SkillInput(camera, canvas);
     this.loadFloor(1);
   }
 
@@ -89,7 +105,21 @@ export class Game {
 
     this.healthBars = new HealthBars(this.worldContainer);
     this.damageNumbers = new DamageNumbers(this.worldContainer);
+    this.particles = new ParticleSystem(this.worldContainer);
+    this.projectiles = new ProjectileSystem(this.worldContainer);
     this.worldContainer.addChild(this.debugGfx);
+
+    this.skillCtx = {
+      world: this.world,
+      rng: this.rng,
+      projectiles: this.projectiles,
+      particles: this.particles,
+      onHit: (x, y, r) => this.damageNumbers.spawn(x, y, r.amount, r.type, r.isCrit),
+      onKill: (e) => this.onDeath(e, 'enemy'),
+      onSummon: (x, y, def, lvl) => {
+        createTotem(this.world, this.entityLayer, def, x, y, lvl);
+      },
+    };
 
     const feats = this.floor.dungeon.features;
     const spawn = spawnAt === 'entrance' ? feats.entrance : feats.exit;
@@ -127,12 +157,28 @@ export class Game {
     rebuildSpatialHash(this.world, this.hash);
     aiSystem(this.world, dt, this.map, this.player);
     playerTargetingSystem(this.world, this.hash, this.player);
+    allyTargetingSystem(this.world, this.hash, this.player);
     combatSystem(this.world, dt, this.rng, {
       onDamage: (_e, x, y, r) => this.damageNumbers.spawn(x, y, r.amount, r.type, r.isCrit),
       onDeath: (e, fac) => this.onDeath(e, fac),
     });
 
+    // 스킬 입력 처리 + 스킬/상태이상/투사체
+    this.processSkillInput();
+    skillSystem(this.skillCtx, dt);
+    statusSystem(this.world, dt, {
+      onBurnTick: (e, dmg) => {
+        const pos = this.world.store<Position>(C.Position).get(e);
+        if (pos) this.damageNumbers.spawn(pos.x, pos.y, dmg, 'fire', false);
+      },
+    });
+    this.projectiles.update(this.world, dt, this.rng, {
+      onHit: (x, y, r) => this.damageNumbers.spawn(x, y, r.amount, r.type, r.isCrit),
+      onKill: (e) => this.onDeath(e, 'enemy'),
+    });
+
     animationTickSystem(this.world, dt);
+    this.particles.update(dt);
     this.damageNumbers.update(dt);
     this.cleanupCorpses(dt);
 
@@ -143,6 +189,16 @@ export class Game {
       if (!this.playerDead) this.checkStairs(pos);
     }
     this.camera.update(dt);
+  }
+
+  private processSkillInput(): void {
+    if (this.playerDead) return;
+    const su = this.world.store<SkillUser>(SC.SkillUser).get(this.player);
+    if (!su) return;
+    for (const req of this.skillInput.drain()) {
+      const skillId = su.slots[req.slot];
+      if (skillId) castSkill(this.skillCtx, this.player, skillId, req.targetX, req.targetY);
+    }
   }
 
   private onDeath(entity: number, faction: 'player' | 'enemy'): void {
@@ -187,6 +243,8 @@ export class Game {
   render(alpha: number): void {
     this.camera.apply();
     renderSyncSystem(this.world, alpha);
+    this.projectiles.render(alpha);
+    this.particles.render();
     this.healthBars.render(this.world, this.player);
     this.damageNumbers.render();
 
@@ -219,6 +277,10 @@ export class Game {
 
   playerHealth(): Health | undefined {
     return this.world.store<Health>(CC.Health).get(this.player);
+  }
+
+  playerSkills(): SkillUser | undefined {
+    return this.world.store<SkillUser>(SC.SkillUser).get(this.player);
   }
 
   get visibleChunks(): number {

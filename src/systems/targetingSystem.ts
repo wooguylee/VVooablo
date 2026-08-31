@@ -55,3 +55,37 @@ export function playerTargetingSystem(
   }
   atk.target = best;
 }
+
+/** 플레이어 진영의 소환물(토템 등)이 근접/사거리 내 적을 타겟팅 */
+export function allyTargetingSystem(world: World, hash: SpatialHash, player: Entity): void {
+  const positions = world.store<Position>(C.Position);
+  const healths = world.store<Health>(CC.Health);
+  const factions = world.store<Faction>(CC.Faction);
+  const attackers = world.store<Attacker>(CC.Attacker);
+
+  for (const [entity, atk] of attackers.entries()) {
+    if (entity === player) continue;
+    const fac = factions.get(entity);
+    if (!fac || fac.id !== 'player') continue;
+    const pos = positions.get(entity);
+    if (!pos) continue;
+
+    const candidates = hash.query(pos.x, pos.y, atk.range + 0.5);
+    let best = -1;
+    let bestDist = Infinity;
+    for (const t of candidates) {
+      const tf = factions.get(t);
+      if (!tf || tf.id === 'player') continue;
+      const th = healths.get(t);
+      if (!th || th.dead) continue;
+      const tp = positions.get(t);
+      if (!tp) continue;
+      const d = Math.hypot(tp.x - pos.x, tp.y - pos.y);
+      if (d <= atk.range && d < bestDist) {
+        bestDist = d;
+        best = t;
+      }
+    }
+    atk.target = best;
+  }
+}

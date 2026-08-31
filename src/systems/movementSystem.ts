@@ -5,6 +5,7 @@
 import type { World, Entity, ComponentStore } from '@/core/ecs';
 import { C, type Position, type Movement, type Facing } from '@/entities/components';
 import { dirFromWorldDelta } from '@/systems/direction';
+import { moveSpeedMultiplier, hasStatus } from '@/systems/status/statusSystem';
 
 export function movementSystem(world: World, dt: number): void {
   const positions = world.store<Position>(C.Position);
@@ -30,7 +31,12 @@ export function movementSystem(world: World, dt: number): void {
     mv.moving = true;
     setState(facings, entity, 'walk');
 
-    let remaining = mv.speed * dt;
+    // 기절 시 이동 불가
+    if (hasStatus(world, entity, 'stun')) {
+      continue;
+    }
+
+    let remaining = mv.speed * moveSpeedMultiplier(world, entity) * dt;
     while (remaining > 0 && mv.path.length > 0) {
       const target = mv.path[0];
       const dx = target.x - pos.x;
