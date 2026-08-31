@@ -6,6 +6,7 @@ import { PixiApp } from '@/render/PixiApp';
 import { Camera } from '@/render/Camera';
 import { DebugOverlay } from '@/ui/DebugOverlay';
 import { FloorHud } from '@/ui/FloorHud';
+import { PlayerHud } from '@/ui/PlayerHud';
 
 /**
  * Phase 3 부트스트랩.
@@ -34,6 +35,9 @@ async function main(): Promise<void> {
     onDescend: () => game.descend(),
     onAscend: () => game.ascend(),
   });
+  const playerHud = new PlayerHud(mount, {
+    onRespawn: () => game.respawn(),
+  });
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -57,6 +61,8 @@ async function main(): Promise<void> {
           mouseTile: game.hoverTile,
         });
         hud.update(game.depth, game.floor.dungeon.seed, game.floor.dungeon.kind, game.floor.monsterLevel);
+        const ph = game.playerHealth();
+        if (ph) playerHud.update(ph.hp, ph.maxHp, game.playerDead);
       },
     },
     Config.fixedHz,
