@@ -13,14 +13,15 @@ import { InventoryPanel } from '@/ui/InventoryPanel';
 import { CharacterPanel } from '@/ui/CharacterPanel';
 import { ShopPanel } from '@/ui/ShopPanel';
 import { OptionsPanel } from '@/ui/OptionsPanel';
+import { VirtualJoystick, isTouchDevice } from '@/ui/VirtualJoystick';
 import { xpProgress } from '@/systems/leveling';
 import { loadOptions, saveOptions } from '@/save/options';
 import { SoundSystem } from '@/audio/SoundSystem';
 import { saveGame, loadGame } from '@/save/storage';
 
 /**
- * Phase 9 부트스트랩.
- * 저장/로드(IndexedDB) + 옵션 + 사운드까지 통합된 진입점.
+ * Phase 10 부트스트랩.
+ * 최적화 + 모바일 입력 + 저장/사운드까지 통합된 최종 진입점.
  */
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
@@ -104,6 +105,13 @@ async function main(): Promise<void> {
   });
   void optionsPanel; // ESC로 자체 토글, 프레임 갱신 불필요
 
+  // 모바일 가상 조이스틱 (터치 기기에서만)
+  const joystick = new VirtualJoystick(mount, {
+    onSkill: (slot) => game.castSkillSlot(slot),
+    onPotion: () => game.usePotionButton(),
+  });
+  if (!isTouchDevice()) joystick.hide();
+
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     camera.cycleZoom(-e.deltaY);
@@ -112,7 +120,13 @@ async function main(): Promise<void> {
 
   const loop = new GameLoop(
     {
-      update: (dt) => game.update(dt),
+      update: (dt) => {
+        // 가상 조이스틱 이동 (활성 시)
+        if (joystick.state.active) {
+          game.moveByDirection(joystick.state.moveX, joystick.state.moveY);
+        }
+        game.update(dt);
+      },
       render: (alpha) => {
         game.render(alpha);
         overlay.update({
@@ -146,7 +160,7 @@ async function main(): Promise<void> {
 
   loop.start();
   // eslint-disable-next-line no-console
-  console.log(`[VVooablo] Phase 9 시작. baseSeed=${seed}`);
+  console.log(`[VVooablo] Phase 10 시작. baseSeed=${seed}`);
 }
 
 main().catch((err) => {

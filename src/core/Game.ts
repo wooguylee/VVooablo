@@ -13,7 +13,7 @@ import { FeatureMarkers } from '@/render/FeatureMarkers';
 import { DamageNumbers } from '@/render/DamageNumbers';
 import { HealthBars } from '@/render/HealthBars';
 import { ParticleSystem } from '@/render/ParticleSystem';
-import { worldToScreen } from '@/render/iso';
+import { worldToScreen, screenToWorld } from '@/render/iso';
 import { generateFloor, type FloorInfo } from '@/world/DungeonManager';
 import { spawnMonsters } from '@/world/SpawnManager';
 import { SpatialHash } from '@/world/SpatialHash';
@@ -562,6 +562,54 @@ export class Game {
     const p = this.playerTile();
     if (!p) return false;
     return Math.hypot(p.x - f.x, p.y - f.y) <= 2;
+  }
+
+  /**
+   * 가상 조이스틱 방향 이동 (모바일).
+   * 화면 방향 벡터 → 월드 방향으로 변환해 한 칸 앞 목표로 이동시킨다.
+   */
+  moveByDirection(screenDx: number, screenDy: number): void {
+    if (this.playerDead) return;
+    if (Math.abs(screenDx) < 0.1 && Math.abs(screenDy) < 0.1) return;
+    const pos = this.world.store<Position>(C.Position).get(this.player);
+    const mv = this.world.store<Movement>(C.Movement).get(this.player);
+    if (!pos || !mv) return;
+    // 화면 방향 → 월드 방향
+    const w = screenToWorld(screenDx, screenDy);
+    const len = Math.hypot(w.x, w.y) || 1;
+    const tx = Math.round(pos.x + (w.x / len) * 2);
+    const ty = Math.round(pos.y + (w.y / len) * 2);
+    if (this.map.isWalkable(tx, ty)) {
+      mv.path = [{ x: tx, y: ty }];
+    }
+  }
+
+  /** 가상 버튼: 스킬 시전 (마우스 방향 대신 최근접 적/전방) */
+  castSkillSlot(slot: number): void {
+    if (this.playerDead) return;
+    const su = this.world.store<SkillUser>(SC.SkillUser).get(this.player);
+    const pos = this.world.store<Position>(C.Position).get(this.player);
+    if (!su || !pos) return;
+    const skillId = su.slots[slot];
+    if (!skillId) return;
+    const atk = this.world
+      .store<import('@/entities/combatComponents').Attacker>(CC.Attacker)
+      .get(this.player);
+    let tx = pos.x + 2;
+    let ty = pos.y + 2;
+    if (atk && atk.target >= 0 && this.world.isAlive(atk.target)) {
+      const tp = this.world.store<Position>(C.Position).get(atk.target);
+      if (tp) {
+        tx = tp.x;
+        ty = tp.y;
+      }
+    }
+    if (castSkill(this.skillCtx, this.player, skillId, tx, ty)) this.sound?.play('skill');
+  }
+
+  /** 가상 버튼: 포션 사용 */
+  usePotionButton(): void {
+    this.tryUsePotion();
   }
 
   /** 장착 후 스탯 반영을 외부(특성/스탯 UI)에서 호출 */

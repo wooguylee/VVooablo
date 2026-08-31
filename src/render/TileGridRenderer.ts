@@ -67,6 +67,12 @@ export class TileGridRenderer {
         const g = new Graphics();
         this.drawChunkTiles(g, cx, cy);
         container.addChild(g);
+        // 정적 타일 청크를 텍스처로 캐싱 (드로우콜/지오메트리 비용 절감)
+        try {
+          container.cacheAsTexture(true);
+        } catch {
+          // 일부 환경(테스트)에서 미지원 시 무시
+        }
         this.root.addChild(container);
         this.chunks.set(this.key(cx, cy), { container, cx, cy });
       }
