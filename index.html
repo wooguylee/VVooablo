@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>VVooablo — 아이소메트릭 픽셀아트 ARPG</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #0a0a0f;
+        overflow: hidden;
+        font-family: monospace;
+      }
+      #game-root {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+      /* 픽셀 퍼펙트: 캔버스는 nearest 업스케일 */
+      #game-root canvas {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
