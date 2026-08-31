@@ -26,6 +26,10 @@ export interface Stats {
   level: number;
   /** 기본 무기 피해 */
   weaponBase: number;
+  /** 장비 미포함 순수 코어 스탯 (재계산 기준). 없으면 core 사용. */
+  baseCore?: CoreStats;
+  /** 장비 미포함 기본 무기 피해 (재계산 기준) */
+  baseWeaponDamage?: number;
 }
 
 export type FactionId = 'player' | 'enemy';

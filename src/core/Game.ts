@@ -19,12 +19,16 @@ import { spawnMonsters } from '@/world/SpawnManager';
 import { SpatialHash } from '@/world/SpatialHash';
 import type { TileMap } from '@/world/TileMap';
 import { createPlayer } from '@/entities/createPlayer';
+import { createProfile, addToInventory, type PlayerProfile } from '@/entities/playerProfile';
+import { equipItem, unequipItem, applyProfileStats } from '@/systems/items/equipSystem';
+import { rollDrops } from '@/systems/items/dropSystem';
+import { GroundItems } from '@/render/GroundItems';
 import { createTotem } from '@/entities/createTotem';
 import { createMonster } from '@/entities/createMonster';
 import { MONSTERS } from '@/data/monsters';
 import { C, type Position, type Movement } from '@/entities/components';
 import { CC, type Health, type Corpse, type Faction, type Stats } from '@/entities/combatComponents';
-import { AC, type Boss } from '@/entities/aiComponents';
+import { AC, type Boss, type Elite } from '@/entities/aiComponents';
 import { SC, type SkillUser } from '@/entities/skillComponents';
 import { InputController } from '@/systems/InputController';
 import { SkillInput } from '@/systems/SkillInput';
@@ -63,11 +67,13 @@ export class Game {
   player = 0;
   playerDead = false;
   boss = -1;
+  readonly profile: PlayerProfile = createProfile();
 
   private grid!: TileGridRenderer;
   private markers!: FeatureMarkers;
   private entityLayer!: Container;
   private telegraphGfx!: Graphics;
+  private groundItems!: GroundItems;
   private damageNumbers!: DamageNumbers;
   private healthBars!: HealthBars;
   private particles!: ParticleSystem;
@@ -116,6 +122,7 @@ export class Game {
     this.damageNumbers = new DamageNumbers(this.worldContainer);
     this.particles = new ParticleSystem(this.worldContainer);
     this.projectiles = new ProjectileSystem(this.worldContainer);
+    this.groundItems = new GroundItems(this.worldContainer);
     this.telegraphGfx = new Graphics();
     this.worldContainer.addChild(this.telegraphGfx);
     this.worldContainer.addChild(this.debugGfx);
@@ -134,7 +141,11 @@ export class Game {
 
     const feats = this.floor.dungeon.features;
     const spawn = spawnAt === 'entrance' ? feats.entrance : feats.exit;
-    this.player = createPlayer(this.world, this.entityLayer, { x: spawn.x, y: spawn.y });
+    this.player = createPlayer(this.world, this.entityLayer, {
+      x: spawn.x,
+      y: spawn.y,
+      profile: this.profile,
+    });
 
     // 몬스터 스폰 (깊이에 따라 증가)
     const count = SPAWN_BASE + depth * 3;
@@ -205,9 +216,21 @@ export class Game {
     if (pos) {
       const s = worldToScreen(pos.x + 0.5, pos.y + 0.5);
       this.camera.follow(s.x, s.y);
-      if (!this.playerDead) this.checkStairs(pos);
+      if (!this.playerDead) {
+        this.checkStairs(pos);
+        this.pickupNearby(pos);
+      }
     }
     this.camera.update(dt);
+  }
+
+  /** 근처 지면 아이템/골드 자동 획득 */
+  private pickupNearby(pos: Position): void {
+    const result = this.groundItems.tryPickup(pos.x, pos.y);
+    if (result.gold > 0) this.profile.inventory.gold += result.gold;
+    for (const item of result.items) {
+      addToInventory(this.profile.inventory, item);
+    }
   }
 
   private processSkillInput(): void {
@@ -296,8 +319,42 @@ export class Game {
       this.camera.shake(8, 0.5);
     } else {
       this.camera.shake(3, 0.15);
+      this.rollLoot(entity);
       // 시체 표시 후 제거 예약
       this.world.store<Corpse>(CC.Corpse).set(entity, { timer: CORPSE_FADE });
+    }
+  }
+
+  /** 적 사망 시 드롭 롤링 → 지면 아이템 생성 */
+  private rollLoot(entity: number): void {
+    const pos = this.world.store<Position>(C.Position).get(entity);
+    if (!pos) return;
+    const isBoss = entity === this.boss;
+    const isElite = this.world.store<Elite>(AC.Elite).has(entity);
+    const dropChance = isBoss ? 1 : isElite ? 0.6 : 0.18;
+    const bonus = isBoss ? 3 : isElite ? 1 : 0;
+    const itemLevel = this.floor.monsterLevel + (isBoss ? 3 : 0);
+    const drops = rollDrops(this.rng, itemLevel, dropChance, bonus);
+    // 아이템을 몬스터 주변에 흩뿌림
+    let offset = 0;
+    for (const item of drops.items) {
+      const dx = Math.cos(offset) * 0.6;
+      const dy = Math.sin(offset) * 0.6;
+      this.groundItems.dropItem(item, pos.x + dx, pos.y + dy);
+      offset += 1.2;
+    }
+    if (drops.gold > 0) this.groundItems.dropGold(drops.gold, pos.x, pos.y);
+  }
+
+  /** 인벤토리 장착 (UI 콜백) */
+  equip(uid: number): void {
+    if (equipItem(this.profile, uid)) {
+      applyProfileStats(this.world, this.player, this.profile);
+    }
+  }
+  unequip(slot: import('@/data/itemTypes').EquipSlot): void {
+    if (unequipItem(this.profile, slot)) {
+      applyProfileStats(this.world, this.player, this.profile);
     }
   }
 
@@ -370,6 +427,13 @@ export class Game {
 
   playerSkills(): SkillUser | undefined {
     return this.world.store<SkillUser>(SC.SkillUser).get(this.player);
+  }
+
+  get inventory() {
+    return this.profile.inventory;
+  }
+  get equipment() {
+    return this.profile.equipment;
   }
 
   /** 보스 정보 (HUD용). 없으면 null. */

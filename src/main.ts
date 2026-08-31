@@ -9,10 +9,11 @@ import { FloorHud } from '@/ui/FloorHud';
 import { PlayerHud } from '@/ui/PlayerHud';
 import { SkillBar } from '@/ui/SkillBar';
 import { BossHud } from '@/ui/BossHud';
+import { InventoryPanel } from '@/ui/InventoryPanel';
 
 /**
- * Phase 6 부트스트랩.
- * 던전 + 전투 + 스킬 5종 + 몬스터 4종 + 엘리트/보스까지 통합된 진입점.
+ * Phase 7 부트스트랩.
+ * 아이템/드롭/인벤토리/장비/스탯 재계산까지 통합된 진입점.
  */
 async function main(): Promise<void> {
   const mount = document.getElementById('game-root');
@@ -42,6 +43,10 @@ async function main(): Promise<void> {
   });
   const skillBar = new SkillBar(mount);
   const bossHud = new BossHud(mount);
+  const inventoryPanel = new InventoryPanel(mount, {
+    onEquip: (uid) => game.equip(uid),
+    onUnequip: (slot) => game.unequip(slot),
+  });
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -69,6 +74,7 @@ async function main(): Promise<void> {
         if (ph) playerHud.update(ph.hp, ph.maxHp, game.playerDead);
         skillBar.update(game.playerSkills());
         bossHud.update(game.bossInfo());
+        inventoryPanel.update(game.inventory, game.equipment);
       },
     },
     Config.fixedHz,
@@ -76,7 +82,7 @@ async function main(): Promise<void> {
 
   loop.start();
   // eslint-disable-next-line no-console
-  console.log(`[VVooablo] Phase 6 시작. baseSeed=${seed}`);
+  console.log(`[VVooablo] Phase 7 시작. baseSeed=${seed}`);
 }
 
 main().catch((err) => {

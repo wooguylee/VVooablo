@@ -74,6 +74,17 @@ const URL = process.env.GAME_URL || 'http://localhost:4173/?seed=smoke';
   // 장시간 구동 (루프 안정성)
   await page.waitForTimeout(2000);
 
+  // 인벤토리 토글 (I) — Phase 7 아이템 UI
+  await page.keyboard.press('i');
+  await page.waitForTimeout(300);
+  const invOpen = await page.evaluate(() => {
+    // 인벤토리 패널 텍스트 존재 확인
+    return document.body.innerText.includes('인벤토리') || document.body.innerText.includes('가방');
+  });
+  console.log('인벤토리 패널 표시:', invOpen);
+  await page.keyboard.press('i');
+  await page.waitForTimeout(200);
+
   // 픽셀 렌더 확인: canvas가 완전히 검지 않은지 (스크린샷 후 분석 대신 간단 체크)
   const rendered = await page.evaluate(() => {
     const c = document.querySelector('#game-root canvas');

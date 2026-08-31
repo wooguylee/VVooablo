@@ -52,7 +52,7 @@ export class DebugOverlay {
   update(s: DebugStats): void {
     if (!this.visible) return;
     this.el.textContent = [
-      `VVooablo — Phase 6  [F1 토글]`,
+      `VVooablo — Phase 7  [F1 토글]`,
       `FPS       : ${s.fps}`,
       `엔티티     : ${s.entities}`,
       `드로우콜   : ${s.drawCalls}`,
